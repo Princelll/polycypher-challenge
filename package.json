@@ -1,0 +1,30 @@
+{
+  "name": "bioloop",
+  "version": "0.1.0",
+  "description": "BioLoop: ML-Driven Biometric-Adaptive Spaced Repetition for Frame G2 + R1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Princelll/polycypher-challenge"
+  },
+  "keywords": [
+    "spaced-repetition",
+    "frame",
+    "web-bluetooth",
+    "biometrics",
+    "adaptive-learning"
+  ],
+  "author": "Jose Eduardo Praiz Mendez",
+  "license": "MIT",
+  "dependencies": {
+    "frame-ble": "^0.3.1",
+    "frame-msg": "^1.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
+  }
+}
