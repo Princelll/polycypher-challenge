@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop IndexedDB Storage Layer
+// BioLoop IndexedDB Storage Layer — v2
 // ============================================================
 
 import {
@@ -9,12 +9,14 @@ import {
   ReviewEvent,
   StudySession,
   LearningProfile,
+  DailyBiometric,
+  Observation,
   createDefaultProfile,
   createDefaultReviewState,
 } from './models';
 
 const DB_NAME = 'bioloop';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = {
   decks: 'decks',
@@ -22,6 +24,8 @@ const STORES = {
   reviewEvents: 'reviewEvents',
   sessions: 'sessions',
   profile: 'profile',
+  biometricHistory: 'biometricHistory',
+  observations: 'observations',
 } as const;
 
 export class Storage {
@@ -31,28 +35,46 @@ export class Storage {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event) => {
         const db = request.result;
-        if (!db.objectStoreNames.contains(STORES.decks)) {
-          db.createObjectStore(STORES.decks, { keyPath: 'id' });
+        const oldVersion = (event as IDBVersionChangeEvent).oldVersion;
+
+        // v1 stores
+        if (oldVersion < 1) {
+          if (!db.objectStoreNames.contains(STORES.decks)) {
+            db.createObjectStore(STORES.decks, { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains(STORES.reviewStates)) {
+            const store = db.createObjectStore(STORES.reviewStates, { keyPath: 'cardId' });
+            store.createIndex('deckId', 'deckId', { unique: false });
+            store.createIndex('dueDate', 'dueDate', { unique: false });
+          }
+          if (!db.objectStoreNames.contains(STORES.reviewEvents)) {
+            const store = db.createObjectStore(STORES.reviewEvents, { keyPath: 'id' });
+            store.createIndex('cardId', 'cardId', { unique: false });
+            store.createIndex('sessionId', 'sessionId', { unique: false });
+            store.createIndex('timestamp', 'timestamp', { unique: false });
+          }
+          if (!db.objectStoreNames.contains(STORES.sessions)) {
+            const store = db.createObjectStore(STORES.sessions, { keyPath: 'id' });
+            store.createIndex('deckId', 'deckId', { unique: false });
+          }
+          if (!db.objectStoreNames.contains(STORES.profile)) {
+            db.createObjectStore(STORES.profile, { keyPath: 'userId' });
+          }
         }
-        if (!db.objectStoreNames.contains(STORES.reviewStates)) {
-          const store = db.createObjectStore(STORES.reviewStates, { keyPath: 'cardId' });
-          store.createIndex('deckId', 'deckId', { unique: false });
-          store.createIndex('dueDate', 'dueDate', { unique: false });
-        }
-        if (!db.objectStoreNames.contains(STORES.reviewEvents)) {
-          const store = db.createObjectStore(STORES.reviewEvents, { keyPath: 'id' });
-          store.createIndex('cardId', 'cardId', { unique: false });
-          store.createIndex('sessionId', 'sessionId', { unique: false });
-          store.createIndex('timestamp', 'timestamp', { unique: false });
-        }
-        if (!db.objectStoreNames.contains(STORES.sessions)) {
-          const store = db.createObjectStore(STORES.sessions, { keyPath: 'id' });
-          store.createIndex('deckId', 'deckId', { unique: false });
-        }
-        if (!db.objectStoreNames.contains(STORES.profile)) {
-          db.createObjectStore(STORES.profile, { keyPath: 'userId' });
+
+        // v2 stores
+        if (oldVersion < 2) {
+          if (!db.objectStoreNames.contains(STORES.biometricHistory)) {
+            db.createObjectStore(STORES.biometricHistory, { keyPath: 'date' });
+          }
+          if (!db.objectStoreNames.contains(STORES.observations)) {
+            const store = db.createObjectStore(STORES.observations, { keyPath: 'id' });
+            store.createIndex('cardId', 'cardId', { unique: false });
+            store.createIndex('sessionId', 'sessionId', { unique: false });
+            store.createIndex('timestamp', 'timestamp', { unique: false });
+          }
         }
       };
 
@@ -77,44 +99,36 @@ export class Storage {
     });
   }
 
-  // --- Decks ---
+  // ── Decks ──────────────────────────────────────────────────
 
   async saveDeck(deck: Deck): Promise<void> {
-    const store = this.getStore(STORES.decks, 'readwrite');
-    await this.request(store.put(deck));
+    await this.request(this.getStore(STORES.decks, 'readwrite').put(deck));
   }
 
   async getDeck(id: string): Promise<Deck | undefined> {
-    const store = this.getStore(STORES.decks);
-    return this.request(store.get(id));
+    return this.request(this.getStore(STORES.decks).get(id));
   }
 
   async getAllDecks(): Promise<Deck[]> {
-    const store = this.getStore(STORES.decks);
-    return this.request(store.getAll());
+    return this.request(this.getStore(STORES.decks).getAll());
   }
 
   async deleteDeck(id: string): Promise<void> {
-    const store = this.getStore(STORES.decks, 'readwrite');
-    await this.request(store.delete(id));
+    await this.request(this.getStore(STORES.decks, 'readwrite').delete(id));
   }
 
-  // --- Review States ---
+  // ── Review States ──────────────────────────────────────────
 
   async saveReviewState(state: CardReviewState): Promise<void> {
-    const store = this.getStore(STORES.reviewStates, 'readwrite');
-    await this.request(store.put(state));
+    await this.request(this.getStore(STORES.reviewStates, 'readwrite').put(state));
   }
 
   async getReviewState(cardId: string): Promise<CardReviewState | undefined> {
-    const store = this.getStore(STORES.reviewStates);
-    return this.request(store.get(cardId));
+    return this.request(this.getStore(STORES.reviewStates).get(cardId));
   }
 
   async getReviewStatesForDeck(deckId: string): Promise<CardReviewState[]> {
-    const store = this.getStore(STORES.reviewStates);
-    const index = store.index('deckId');
-    return this.request(index.getAll(deckId));
+    return this.request(this.getStore(STORES.reviewStates).index('deckId').getAll(deckId));
   }
 
   async ensureReviewStates(deck: Deck): Promise<void> {
@@ -126,61 +140,91 @@ export class Storage {
     }
   }
 
-  // --- Review Events ---
+  // ── Review Events ──────────────────────────────────────────
 
   async saveReviewEvent(event: ReviewEvent): Promise<void> {
-    const store = this.getStore(STORES.reviewEvents, 'readwrite');
-    await this.request(store.put(event));
+    await this.request(this.getStore(STORES.reviewEvents, 'readwrite').put(event));
   }
 
   async getReviewEventsForSession(sessionId: string): Promise<ReviewEvent[]> {
-    const store = this.getStore(STORES.reviewEvents);
-    const index = store.index('sessionId');
-    return this.request(index.getAll(sessionId));
+    return this.request(this.getStore(STORES.reviewEvents).index('sessionId').getAll(sessionId));
   }
 
   async getReviewEventsForCard(cardId: string): Promise<ReviewEvent[]> {
-    const store = this.getStore(STORES.reviewEvents);
-    const index = store.index('cardId');
-    return this.request(index.getAll(cardId));
+    return this.request(this.getStore(STORES.reviewEvents).index('cardId').getAll(cardId));
   }
 
   async getAllReviewEvents(): Promise<ReviewEvent[]> {
-    const store = this.getStore(STORES.reviewEvents);
-    return this.request(store.getAll());
+    return this.request(this.getStore(STORES.reviewEvents).getAll());
   }
 
-  // --- Sessions ---
+  // ── Sessions ───────────────────────────────────────────────
 
   async saveSession(session: StudySession): Promise<void> {
-    const store = this.getStore(STORES.sessions, 'readwrite');
-    await this.request(store.put(session));
+    await this.request(this.getStore(STORES.sessions, 'readwrite').put(session));
   }
 
   async getSession(id: string): Promise<StudySession | undefined> {
-    const store = this.getStore(STORES.sessions);
-    return this.request(store.get(id));
+    return this.request(this.getStore(STORES.sessions).get(id));
   }
 
   async getAllSessions(): Promise<StudySession[]> {
-    const store = this.getStore(STORES.sessions);
-    return this.request(store.getAll());
+    return this.request(this.getStore(STORES.sessions).getAll());
   }
 
-  // --- Profile ---
+  // ── Profile ────────────────────────────────────────────────
 
   async getProfile(): Promise<LearningProfile> {
-    const store = this.getStore(STORES.profile);
-    const all = await this.request(store.getAll()) as LearningProfile[];
+    const all = await this.request(this.getStore(STORES.profile).getAll()) as LearningProfile[];
     if (all.length > 0) return all[0];
-    // Create default profile
     const profile = createDefaultProfile();
     await this.saveProfile(profile);
     return profile;
   }
 
   async saveProfile(profile: LearningProfile): Promise<void> {
-    const store = this.getStore(STORES.profile, 'readwrite');
-    await this.request(store.put(profile));
+    await this.request(this.getStore(STORES.profile, 'readwrite').put(profile));
   }
+
+  // ── Biometric History ──────────────────────────────────────
+
+  /** Save a daily biometric entry and auto-trim to last 14 days */
+  async saveDailyBiometric(entry: DailyBiometric): Promise<void> {
+    await this.request(this.getStore(STORES.biometricHistory, 'readwrite').put(entry));
+
+    // Trim to 14 most recent entries
+    const all = await this.getBiometricHistory();
+    if (all.length > 14) {
+      const toDelete = all
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, all.length - 14);
+      for (const entry of toDelete) {
+        await this.request(
+          this.getStore(STORES.biometricHistory, 'readwrite').delete(entry.date),
+        );
+      }
+    }
+  }
+
+  async getBiometricHistory(): Promise<DailyBiometric[]> {
+    return this.request(this.getStore(STORES.biometricHistory).getAll());
+  }
+
+  // ── Observations ───────────────────────────────────────────
+
+  async saveObservation(obs: Observation): Promise<void> {
+    await this.request(this.getStore(STORES.observations, 'readwrite').put(obs));
+  }
+
+  async getAllObservations(): Promise<Observation[]> {
+    return this.request(this.getStore(STORES.observations).getAll());
+  }
+
+  async getObservationsForCard(cardId: string): Promise<Observation[]> {
+    return this.request(this.getStore(STORES.observations).index('cardId').getAll(cardId));
+  }
+
+  // ── Card helpers (kept for compatibility) ──────────────────
+
+  void(_card: Card): void { /* type helper */ }
 }

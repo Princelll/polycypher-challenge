@@ -1,15 +1,23 @@
 // ============================================================
 // BioLoop Analytics Engine
-// Computes learning statistics and generates insights
 // ============================================================
 
-import { ReviewEvent, StudySession, CardReviewState, LearningProfile } from './models';
+import {
+  ReviewEvent,
+  StudySession,
+  CardReviewState,
+  LearningProfile,
+  Observation,
+  ModelDashboard,
+  RegressionResult,
+} from './models';
+import { runAnalysis } from './regression';
 
 export interface DeckStats {
   totalCards: number;
   cardsDue: number;
   cardsNew: number;
-  cardsMature: number; // interval > 21 days
+  cardsMature: number;
   averageEase: number;
   averageInterval: number;
   retentionRate: number;
@@ -34,7 +42,6 @@ export interface RetentionPoint {
 }
 
 export class Analytics {
-  /** Compute deck-level statistics */
   static computeDeckStats(states: CardReviewState[], totalCards: number): DeckStats {
     const now = Date.now();
     const due = states.filter(s => s.dueDate <= now).length;
@@ -59,7 +66,6 @@ export class Analytics {
     };
   }
 
-  /** Compute session-level statistics */
   static computeSessionStats(sessions: StudySession[]): SessionStats {
     if (sessions.length === 0) {
       return {
@@ -78,7 +84,6 @@ export class Analytics {
     const totalCards = sessions.reduce((s, sess) => s + sess.cardsReviewed, 0);
     const totalCorrect = sessions.reduce((s, sess) => s + sess.cardsCorrect, 0);
 
-    // Find best/worst study hours
     const hourStats: Record<number, { correct: number; total: number }> = {};
     for (const sess of sessions) {
       const hour = new Date(sess.startTime).getHours();
@@ -95,19 +100,14 @@ export class Analytics {
     for (const [hour, stats] of Object.entries(hourStats)) {
       if (stats.total < 5) continue;
       const rate = stats.correct / stats.total;
-      if (rate > bestRate) {
-        bestRate = rate;
-        bestHour = parseInt(hour);
-      }
-      if (rate < worstRate) {
-        worstRate = rate;
-        worstHour = parseInt(hour);
-      }
+      if (rate > bestRate) { bestRate = rate; bestHour = parseInt(hour); }
+      if (rate < worstRate) { worstRate = rate; worstHour = parseInt(hour); }
     }
 
     const completedSessions = sessions.filter(s => s.endTime);
     const avgDuration = completedSessions.length > 0
-      ? completedSessions.reduce((s, sess) => s + (sess.endTime! - sess.startTime), 0) / completedSessions.length / 60000
+      ? completedSessions.reduce((s, sess) => s + (sess.endTime! - sess.startTime), 0) /
+        completedSessions.length / 60000
       : 0;
 
     return {
@@ -123,7 +123,6 @@ export class Analytics {
     };
   }
 
-  /** Generate daily retention curve data */
   static computeRetentionCurve(events: ReviewEvent[], days: number = 30): RetentionPoint[] {
     const now = Date.now();
     const points: RetentionPoint[] = [];
@@ -146,41 +145,98 @@ export class Analytics {
     return points;
   }
 
-  /** Generate insights from the learning profile */
+  /** Build model dashboard from profile + observations */
+  static getModelDashboard(
+    profile: LearningProfile,
+    observations: Observation[],
+  ): ModelDashboard {
+    const n = observations.length;
+    const calibrationDays = profile.biometricHistory.length;
+    const observationsNeeded = Math.max(0, 15 - n);
+
+    if (n < 15) {
+      return {
+        status: 'collecting_data',
+        r2: null,
+        adjR2: null,
+        nObservations: n,
+        styleRanking: [],
+        significantFactors: [],
+        calibrationDays,
+        observationsNeeded,
+      };
+    }
+
+    const result: RegressionResult = runAnalysis(observations);
+
+    const significantFactors: string[] = [];
+    if (result.coefficients) {
+      for (const [name, coef] of Object.entries(result.coefficients)) {
+        if (coef.significant && !coef.isConfounder && name !== 'intercept') {
+          significantFactors.push(name);
+        }
+      }
+    }
+
+    return {
+      status: result.status,
+      r2: result.r_squared ?? null,
+      adjR2: result.adjusted_r_squared ?? null,
+      nObservations: n,
+      styleRanking: result.recommendations?.styleRanking ?? [],
+      significantFactors,
+      calibrationDays,
+      observationsNeeded: 0,
+    };
+  }
+
   static generateInsights(
     profile: LearningProfile,
     sessionStats: SessionStats,
     deckStats: DeckStats,
+    modelDashboard?: ModelDashboard | null,
   ): string[] {
     const insights: string[] = [];
 
-    // Best study time
     if (sessionStats.bestHour !== null) {
       insights.push(`Your best study time is around ${sessionStats.bestHour}:00 — accuracy peaks during this hour.`);
     }
 
-    // Mode preferences
-    const sortedModes = Object.entries(profile.globalModePreferences)
-      .sort(([, a], [, b]) => b - a);
+    const sortedModes = Object.entries(profile.globalModePreferences).sort(([, a], [, b]) => b - a);
     if (sortedModes.length > 0 && sortedModes[0][1] > 1.2) {
       insights.push(`"${sortedModes[0][0]}" presentation style works best for you overall.`);
     }
 
-    // Retention
     if (deckStats.retentionRate > 0.8) {
       insights.push(`Strong retention rate (${Math.round(deckStats.retentionRate * 100)}%) — your spacing is well-calibrated.`);
     } else if (deckStats.retentionRate < 0.6 && deckStats.retentionRate > 0) {
       insights.push(`Retention at ${Math.round(deckStats.retentionRate * 100)}% — consider shorter intervals or more frequent sessions.`);
     }
 
-    // Session duration
     if (sessionStats.averageSessionDuration > 20) {
-      insights.push(`Average sessions run ${Math.round(sessionStats.averageSessionDuration)}min — consider shorter, more frequent sessions for better retention.`);
+      insights.push(`Average sessions run ${Math.round(sessionStats.averageSessionDuration)}min — consider shorter, more frequent sessions.`);
     }
 
-    // Maturity
     if (deckStats.cardsMature > 0) {
       insights.push(`${deckStats.cardsMature} cards are mature (21+ day intervals) — long-term memory formation in progress!`);
+    }
+
+    // Regression-based insights
+    if (modelDashboard) {
+      if (modelDashboard.status === 'collecting_data') {
+        insights.push(`OLS model needs ${modelDashboard.observationsNeeded} more card ratings to fit — keep studying!`);
+      } else if (modelDashboard.styleRanking.length > 0) {
+        const top = modelDashboard.styleRanking[0];
+        if (top.significant) {
+          insights.push(`ML model confirms "${top.style}" is your most effective learning style (β=${top.beta.toFixed(2)}, p<0.05).`);
+        } else {
+          insights.push(`Preliminary model suggests "${top.style}" may work best — more data will confirm this.`);
+        }
+      }
+
+      if (modelDashboard.r2 !== null && modelDashboard.r2 > 0.2) {
+        insights.push(`Learning model explains ${Math.round(modelDashboard.r2 * 100)}% of performance variance — personalisation is working.`);
+      }
     }
 
     if (insights.length === 0) {

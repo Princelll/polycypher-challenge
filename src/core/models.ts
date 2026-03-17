@@ -16,11 +16,11 @@ export type PresentationMode =
   | 'clinical_example'
   | 'story';
 
-// ── Z-Score Biometric Model (Cheng 2022, Schiweck 2018) ────────
+// ── Z-Score Biometric Model (Cheng 2022, Schiweck 2018) ────────────
 
 /** Biometric z-scores relative to personal baseline */
 export interface BiometricZScores {
-  /** RMSSD z-score — parasympathetic index. Negative = below personal baseline */
+  /** RMSSD z-score – parasympathetic index. Negative = below personal baseline */
   rmssdZ: number;
   /** SpO2 nocturnal dip severity z-score. Positive = worse than usual dipping */
   spo2DipZ: number;
@@ -34,11 +34,11 @@ export interface BiometricZScores {
   cognitiveLoad: number;
 }
 
-/** Structural confounders — collected once, affect HRV baseline (Licht 2008) */
+/** Structural confounders – collected once, affect HRV baseline (Licht 2008) */
 export interface Confounders {
   /** SSRIs structurally reduce HRV by ~10-15ms RMSSD */
   onSSRI: boolean;
-  /** BMI category — obesity associated with lower HRV */
+  /** BMI category – obesity associated with lower HRV */
   bmiCategory: 'underweight' | 'normal' | 'overweight' | 'obese';
   /** Smoking reduces HRV structurally */
   smoker: boolean;
@@ -123,6 +123,18 @@ export interface RegressionResult {
   message?: string;
 }
 
+/** Model dashboard data */
+export interface ModelDashboard {
+  status: RegressionResult['status'];
+  r2: number | null;
+  adjR2: number | null;
+  nObservations: number;
+  styleRanking: { style: string; beta: number; significant: boolean }[];
+  significantFactors: string[];
+  calibrationDays: number;
+  observationsNeeded: number;
+}
+
 /** Confidence rating from user input (tap gestures on Frame) */
 export type ConfidenceRating = 'again' | 'hard' | 'good' | 'easy';
 
@@ -165,23 +177,14 @@ export interface Deck {
 export interface CardReviewState {
   cardId: string;
   deckId: string;
-  /** Number of consecutive correct reviews */
   repetitions: number;
-  /** Easiness factor (SM-2), starts at 2.5 */
   easeFactor: number;
-  /** Current interval in days */
   interval: number;
-  /** Next review timestamp */
   dueDate: number;
-  /** Last review timestamp */
   lastReview: number | null;
-  /** Total reviews count */
   totalReviews: number;
-  /** Consecutive correct count */
   streak: number;
-  /** Best presentation mode discovered for this card */
   bestPresentationMode: PresentationMode | null;
-  /** Performance per presentation mode: mode -> { correct, total } */
   modePerformance: Partial<Record<PresentationMode, { correct: number; total: number }>>;
 }
 
@@ -194,28 +197,24 @@ export interface ReviewEvent {
   rating: ConfidenceRating;
   responseLatencyMs: number;
   presentationMode: PresentationMode;
-  /** Biometric context at time of review */
   biometricSnapshot: BiometricSnapshot | null;
-  /** Session context */
   sessionId: string;
-  /** Was the recall correct? (good or easy = true) */
   correct: boolean;
 }
 
-/** Biometric data snapshot */
+/** Biometric data snapshot – updated to use rmssd + zScores */
 export interface BiometricSnapshot {
-  /** Timestamp of measurement */
   timestamp: number;
-  /** Heart rate from R1 ring (bpm), null if unavailable */
   heartRate: number | null;
-  /** HRV from R1 ring (ms), null if unavailable */
+  /** RMSSD in ms (replaces legacy hrv field) */
+  rmssd: number | null;
+  /** Legacy alias kept for backwards compat */
   hrv: number | null;
-  /** SpO2 percentage, null if unavailable */
   spo2: number | null;
-  /** IMU data from Frame glasses */
   imu: { x: number; y: number; z: number } | null;
-  /** Self-reported state */
   selfReportedState: 'good' | 'tired' | 'stressed' | null;
+  /** Z-scores computed from personal baseline, null if not calibrated */
+  zScores: BiometricZScores | null;
 }
 
 /** Study session */
@@ -227,37 +226,37 @@ export interface StudySession {
   cardsReviewed: number;
   cardsCorrect: number;
   averageLatencyMs: number;
-  /** Pre-session self-report */
   preSessionState: 'good' | 'tired' | 'stressed' | null;
-  /** Post-session perceived effort */
   postSessionEffort: 'easy' | 'moderate' | 'hard' | null;
-  /** Biometric summary for the session */
   biometricSummary: {
     avgHeartRate: number | null;
     avgHrv: number | null;
     avgSpo2: number | null;
   };
-  reviewEvents: string[]; // ReviewEvent IDs
+  reviewEvents: string[];
 }
 
-/** User learning profile */
+/** User learning profile – extended with z-score fields */
 export interface LearningProfile {
   userId: string;
-  /** Which presentation modes work best overall */
   globalModePreferences: Record<PresentationMode, number>;
-  /** Per-complexity preferences */
   complexityModePreferences: Record<ComplexityTag, Partial<Record<PresentationMode, number>>>;
-  /** Optimal study time windows discovered */
   optimalStudyWindows: { hourStart: number; hourEnd: number; score: number }[];
-  /** Average session duration before diminishing returns (minutes) */
   optimalSessionDuration: number;
-  /** Running stats */
   totalCards: number;
   totalSessions: number;
   totalReviewEvents: number;
   longestStreak: number;
-  /** HRV threshold below which to reduce difficulty */
+  /** Legacy absolute threshold – kept for compat, prefer z-scores */
   hrvThreshold: number | null;
+  /** Structural confounders collected from user */
+  confounders: Confounders;
+  /** Rolling 14-day biometric history for z-score calibration */
+  biometricHistory: DailyBiometric[];
+  /** Per-style preference scores 0-1 from online learning */
+  stylePreferences: Record<string, number>;
+  /** OLS model status string */
+  modelStatus: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -289,9 +288,13 @@ export function createDefaultProfile(): LearningProfile {
   const modes: PresentationMode[] = [
     'definition', 'analogy', 'example', 'visual',
     'socratic', 'mnemonic', 'step-by-step', 'contrast',
+    'real_life_example', 'clinical_example', 'story',
   ];
   const globalModePreferences = {} as Record<PresentationMode, number>;
   modes.forEach(m => (globalModePreferences[m] = 1.0));
+
+  const stylePreferences: Record<string, number> = {};
+  modes.forEach(m => (stylePreferences[m] = 0.5));
 
   return {
     userId: generateId(),
@@ -310,6 +313,14 @@ export function createDefaultProfile(): LearningProfile {
     totalReviewEvents: 0,
     longestStreak: 0,
     hrvThreshold: null,
+    confounders: {
+      onSSRI: false,
+      bmiCategory: 'normal',
+      smoker: false,
+    },
+    biometricHistory: [],
+    stylePreferences,
+    modelStatus: 'collecting_data',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

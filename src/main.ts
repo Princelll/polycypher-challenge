@@ -1,6 +1,6 @@
 // ============================================================
 // BioLoop Main Application
-// ML-Driven Biometric-Adaptive Spaced Repetition for Frame G2 + R1
+// ML-Driven Biometric-Adaptive Spaced Repetition
 // ============================================================
 
 import { Storage } from './core/storage';
@@ -9,8 +9,18 @@ import { SessionManager, SessionState, SessionPhase } from './core/session';
 import { FrameConnection, ConnectionStatus } from './frame/connection';
 import { Analytics, DeckStats, SessionStats } from './core/analytics';
 import { createSampleDecks } from './data/sample-decks';
-import { Deck, ConfidenceRating, StudySession } from './core/models';
+import {
+  Deck,
+  ConfidenceRating,
+  StudySession,
+  BiometricZScores,
+  Confounders,
+  CalibrationStatus,
+  SessionRecommendation,
+  ModelDashboard,
+} from './core/models';
 import { renderUI, UICallbacks } from './ui/renderer';
+import { runAnalysis } from './core/regression';
 
 class BioLoopApp {
   private storage: Storage;
@@ -20,6 +30,21 @@ class BioLoopApp {
   private decks: Deck[] = [];
   private currentDeckId: string | null = null;
   private logs: string[] = [];
+
+  // Z-score state
+  private currentZScores: BiometricZScores = {
+    rmssdZ: 0,
+    spo2DipZ: 0,
+    restingHRZ: 0,
+    sleepQuality: 0.7,
+    stressState: 0.3,
+    cognitiveLoad: 0.3,
+  };
+  private currentConfounders: Confounders = {
+    onSSRI: false,
+    bmiCategory: 'normal',
+    smoker: false,
+  };
 
   constructor() {
     this.storage = new Storage();
@@ -36,16 +61,20 @@ class BioLoopApp {
     await this.storage.open();
     this.log('Database initialized');
 
-    // Load or create sample decks
     this.decks = await this.storage.getAllDecks();
     if (this.decks.length === 0) {
-      this.log('Loading sample decks...');
       const samples = createSampleDecks();
       for (const deck of samples) {
         await this.storage.saveDeck(deck);
       }
       this.decks = samples;
       this.log(`Loaded ${samples.length} sample decks`);
+    }
+
+    // Load saved confounders from profile
+    const profile = await this.storage.getProfile();
+    if (profile.confounders) {
+      this.currentConfounders = profile.confounders;
     }
 
     this.renderApp();
@@ -65,25 +94,24 @@ class BioLoopApp {
 
   private onFrameTap(rating: ConfidenceRating): void {
     if (!this.session) return;
-
     const phase = this.session.getPhase();
     if (phase === 'studying') {
-      // Tap during question = reveal answer
       this.session.revealAnswer();
     } else if (phase === 'awaiting-rating') {
-      // Tap during answer = rate the card
       this.session.rateCard(rating);
     }
   }
 
   private async renderApp(): Promise<void> {
     const frameStatus = this.frame.getStatus();
-    const sessionPhase = this.session?.getPhase() ?? 'idle';
+    const sessionPhase = (this.session?.getPhase() ?? 'idle') as SessionPhase;
 
-    // Get analytics for current deck
     let deckStats: DeckStats | null = null;
     let sessionStats: SessionStats | null = null;
     let insights: string[] = [];
+    let calibrationStatus: CalibrationStatus | null = null;
+    let sessionRecommendation: SessionRecommendation | null = null;
+    let modelDashboard: ModelDashboard | null = null;
 
     if (this.currentDeckId) {
       const states = await this.storage.getReviewStatesForDeck(this.currentDeckId);
@@ -97,8 +125,21 @@ class BioLoopApp {
     sessionStats = Analytics.computeSessionStats(allSessions);
 
     const profile = await this.storage.getProfile();
+
+    // Calibration status
+    calibrationStatus = this.scheduler.calibrationStatus(profile.biometricHistory);
+
+    // Session recommendation from current z-scores
+    sessionRecommendation = this.scheduler.getSessionRecommendation(this.currentZScores);
+
+    // Model dashboard
+    const allObs = await this.storage.getAllObservations();
+    if (allObs.length > 0) {
+      modelDashboard = Analytics.getModelDashboard(profile, allObs);
+    }
+
     if (deckStats && sessionStats) {
-      insights = Analytics.generateInsights(profile, sessionStats, deckStats);
+      insights = Analytics.generateInsights(profile, sessionStats, deckStats, modelDashboard);
     }
 
     const callbacks: UICallbacks = {
@@ -110,6 +151,8 @@ class BioLoopApp {
       onRateCard: (rating) => this.session?.rateCard(rating),
       onEndSession: () => this.session?.endSession(),
       onImportDeck: (json) => this.importDeck(json),
+      onZScoreChange: (z) => this.onZScoreChange(z),
+      onConfounderChange: (c) => this.onConfounderChange(c),
     };
 
     renderUI({
@@ -122,6 +165,11 @@ class BioLoopApp {
       insights,
       logs: this.logs,
       callbacks,
+      currentZScores: this.currentZScores,
+      currentConfounders: this.currentConfounders,
+      calibrationStatus,
+      sessionRecommendation,
+      modelDashboard,
     });
   }
 
@@ -138,30 +186,61 @@ class BioLoopApp {
     }
 
     this.session = new SessionManager(this.scheduler, this.storage, {
-      onStateChange: (state) => this.onSessionState(state),
-      onSessionEnd: (summary) => this.onSessionEnd(summary),
-      onCardDisplay: (text, isFront) => this.onCardDisplay(text, isFront),
-      onLog: (msg) => this.log(msg),
+      onStateChange: (_state: SessionState) => this.renderApp(),
+      onSessionEnd: (_summary: StudySession) => {
+        this.frame.displayFeedback('Session complete!');
+        this.renderApp();
+      },
+      onCardDisplay: (text: string, _isFront: boolean) => {
+        if (this.frame.isConnected()) {
+          this.frame.displayText(text);
+        }
+        this.renderApp();
+      },
+      onLog: (msg: string) => this.log(msg),
     });
 
-    await this.session.startSession(this.currentDeckId, preState);
+    await this.session.startSession(
+      this.currentDeckId,
+      preState,
+      this.currentZScores,
+      this.currentConfounders,
+    );
   }
 
-  private onSessionState(_state: SessionState): void {
-    this.renderApp();
-  }
-
-  private onSessionEnd(_summary: StudySession): void {
-    this.frame.displayFeedback('Session complete!');
-    this.renderApp();
-  }
-
-  private onCardDisplay(text: string, isFront: boolean): void {
-    // Display on Frame glasses if connected
-    if (this.frame.isConnected()) {
-      this.frame.displayText(text);
+  private async onZScoreChange(z: BiometricZScores): Promise<void> {
+    this.currentZScores = z;
+    // Update session recommendation reactively (no full re-render to keep slider focus)
+    const rec = this.scheduler.getSessionRecommendation(z);
+    const recEl = document.querySelector('.rec-banner');
+    if (rec.mode !== 'normal') {
+      const cls = rec.mode === 'stop' ? 'rec-banner rec-stop' : 'rec-banner rec-review';
+      const icon = rec.mode === 'stop' ? '🛑' : '⚠️';
+      const html = `${icon} ${rec.reason ?? ''} ${rec.mode === 'review_only' ? `<span class="rec-cards">(${rec.cards} cards max)</span>` : ''}`;
+      if (recEl) {
+        recEl.className = cls;
+        recEl.innerHTML = html;
+      } else {
+        // Insert after calibration banner if present
+        const banner = document.querySelector('.calibration-banner');
+        if (banner) {
+          const div = document.createElement('div');
+          div.className = cls;
+          div.innerHTML = html;
+          banner.insertAdjacentElement('afterend', div);
+        }
+      }
+    } else if (recEl) {
+      recEl.remove();
     }
-    this.renderApp();
+  }
+
+  private async onConfounderChange(c: Confounders): Promise<void> {
+    this.currentConfounders = c;
+    // Persist to profile
+    const profile = await this.storage.getProfile();
+    profile.confounders = c;
+    await this.storage.saveProfile(profile);
   }
 
   private async importDeck(json: string): Promise<void> {
@@ -179,8 +258,21 @@ class BioLoopApp {
       this.log(`Import error: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  /** Run a one-off regression check (can be called from console) */
+  async runModelCheck(): Promise<void> {
+    const obs = await this.storage.getAllObservations();
+    const result = runAnalysis(obs);
+    this.log(`Model check: ${result.status} — ${result.message ?? ''}`);
+    if (result.recommendations) {
+      this.log(`Best style: ${result.recommendations.bestStyle}`);
+    }
+  }
 }
 
-// Boot the app
+// Boot
 const app = new BioLoopApp();
 app.init().catch(err => console.error('BioLoop init failed:', err));
+
+// Expose for console debugging
+(window as unknown as Record<string, unknown>).bioloop = app;

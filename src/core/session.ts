@@ -1,6 +1,6 @@
 // ============================================================
 // BioLoop Study Session Manager
-// Cortisol-aware session design with diminishing returns detection
+// Z-score aware session pipeline with observation recording
 // ============================================================
 
 import {
@@ -11,12 +11,16 @@ import {
   StudySession,
   LearningProfile,
   BiometricSnapshot,
+  BiometricZScores,
+  Confounders,
+  Observation,
   ConfidenceRating,
   PresentationMode,
   generateId,
 } from './models';
 import { Scheduler } from './scheduler';
 import { Storage } from './storage';
+import { runAnalysis, updateStylePreferences } from './regression';
 
 export type SessionPhase =
   | 'idle'
@@ -67,6 +71,10 @@ export class SessionManager {
   private reviewEventIds: string[] = [];
   private sessionStartTime = 0;
 
+  // Z-score context for this session
+  private zScores: BiometricZScores | null = null;
+  private confounders: Confounders | null = null;
+
   constructor(scheduler: Scheduler, storage: Storage, events: SessionEvents) {
     this.scheduler = scheduler;
     this.storage = storage;
@@ -74,23 +82,41 @@ export class SessionManager {
   }
 
   /**
-   * Start a study session for a deck.
+   * Start a study session.
+   * Accepts z-scores and confounders instead of just preState string.
    */
-  async startSession(deckId: string, preState: 'good' | 'tired' | 'stressed' | null): Promise<void> {
+  async startSession(
+    deckId: string,
+    preState: 'good' | 'tired' | 'stressed' | null,
+    zScores: BiometricZScores | null = null,
+    confounders: Confounders | null = null,
+  ): Promise<void> {
     const deck = await this.storage.getDeck(deckId);
     if (!deck) throw new Error(`Deck not found: ${deckId}`);
     this.deck = deck;
 
-    // Ensure all cards have review states
     await this.storage.ensureReviewStates(this.deck);
-
     this.profile = await this.storage.getProfile();
 
-    // Get due cards
+    this.zScores = zScores;
+    this.confounders = confounders ?? this.profile?.confounders ?? null;
+
+    // Session recommendation check
+    if (zScores) {
+      const rec = this.scheduler.getSessionRecommendation(zScores);
+      if (rec.mode === 'stop') {
+        this.events.onLog(`Session blocked: ${rec.reason}`);
+        this.setPhase('complete');
+        return;
+      }
+      if (rec.mode === 'review_only') {
+        this.events.onLog(`Reduced session: ${rec.reason}`);
+      }
+    }
+
     const allStates = await this.storage.getReviewStatesForDeck(deckId);
     this.dueCards = this.scheduler.getDueCards(allStates);
 
-    // If no due cards, include new cards (no reviews yet)
     if (this.dueCards.length === 0) {
       this.dueCards = allStates.filter(s => s.totalReviews === 0);
     }
@@ -121,22 +147,17 @@ export class SessionManager {
     };
 
     await this.storage.saveSession(this.session);
-
     this.events.onLog(`Session started: ${this.dueCards.length} cards due`);
     this.setPhase('studying');
     await this.showNextCard();
   }
 
-  /**
-   * Show the next due card.
-   */
   private async showNextCard(): Promise<void> {
     if (this.currentCardIndex >= this.dueCards.length) {
       await this.endSession();
       return;
     }
 
-    // Check for diminishing returns
     const sessionDuration = (Date.now() - this.sessionStartTime) / 60000;
     const recentAccuracy = this.getRecentAccuracy();
     const check = this.scheduler.shouldEndSession(
@@ -163,37 +184,29 @@ export class SessionManager {
     this.currentCard = card;
     this.currentReviewState = reviewState;
 
-    // Select presentation mode
+    // Pass z-scores to mode selection for stress-aware logic
     this.currentMode = this.scheduler.selectPresentationMode(
       reviewState,
       this.profile,
       card.complexity,
+      this.zScores,
     );
 
-    // Get the front text for this presentation mode
     const frontText = this.getCardText(card, this.currentMode, true);
-
     this.cardStartTime = Date.now();
     this.setPhase('studying');
     this.events.onCardDisplay(frontText, true);
     this.emitState();
   }
 
-  /**
-   * Reveal the answer (back of current card).
-   */
   revealAnswer(): void {
     if (!this.currentCard || this.phase !== 'studying') return;
-
     const backText = this.getCardText(this.currentCard, this.currentMode, false);
     this.setPhase('awaiting-rating');
     this.events.onCardDisplay(backText, false);
     this.emitState();
   }
 
-  /**
-   * Rate the current card and advance.
-   */
   async rateCard(
     rating: ConfidenceRating,
     biometrics: BiometricSnapshot | null = null,
@@ -203,16 +216,31 @@ export class SessionManager {
     const responseLatencyMs = Date.now() - this.cardStartTime;
     const correct = rating === 'good' || rating === 'easy';
 
-    // Update review state via scheduler
+    // Attach z-scores to biometric snapshot if we have them
+    const enrichedBiometrics: BiometricSnapshot | null = biometrics
+      ? { ...biometrics, zScores: this.zScores }
+      : this.zScores
+        ? {
+            timestamp: Date.now(),
+            heartRate: null,
+            rmssd: null,
+            hrv: null,
+            spo2: null,
+            imu: null,
+            selfReportedState: null,
+            zScores: this.zScores,
+          }
+        : null;
+
     const newState = this.scheduler.schedule(
       this.currentReviewState,
       rating,
-      biometrics,
+      enrichedBiometrics,
       this.profile,
       responseLatencyMs,
     );
 
-    // Update mode performance
+    // Mode performance tracking
     if (!newState.modePerformance[this.currentMode]) {
       newState.modePerformance[this.currentMode] = { correct: 0, total: 0 };
     }
@@ -220,13 +248,12 @@ export class SessionManager {
     perf.total++;
     if (correct) perf.correct++;
 
-    // Update best presentation mode
     const bestMode = this.findBestMode(newState);
     if (bestMode) newState.bestPresentationMode = bestMode;
 
     await this.storage.saveReviewState(newState);
 
-    // Create review event
+    // Review event
     const event: ReviewEvent = {
       id: generateId(),
       cardId: this.currentCard.id,
@@ -235,26 +262,29 @@ export class SessionManager {
       rating,
       responseLatencyMs,
       presentationMode: this.currentMode,
-      biometricSnapshot: biometrics,
+      biometricSnapshot: enrichedBiometrics,
       sessionId: this.session.id,
       correct,
     };
     await this.storage.saveReviewEvent(event);
     this.reviewEventIds.push(event.id);
 
-    // Update session stats
+    // Record observation for OLS regression
+    await this.recordObservation(correct, responseLatencyMs, rating);
+
+    // Session stats
     this.session.cardsReviewed++;
     if (correct) this.session.cardsCorrect++;
     this.recentResults.push(correct);
     if (this.recentResults.length > 5) this.recentResults.shift();
 
-    // Update running average latency
-    const totalLatency = this.session.averageLatencyMs * (this.session.cardsReviewed - 1) + responseLatencyMs;
+    const totalLatency =
+      this.session.averageLatencyMs * (this.session.cardsReviewed - 1) + responseLatencyMs;
     this.session.averageLatencyMs = totalLatency / this.session.cardsReviewed;
     this.session.reviewEvents = this.reviewEventIds;
     await this.storage.saveSession(this.session);
 
-    // Update learning profile
+    // Update profile + style preferences
     if (this.profile) {
       this.profile = this.scheduler.updateProfile(
         this.profile,
@@ -262,10 +292,28 @@ export class SessionManager {
         this.currentCard.complexity,
         correct,
       );
+      this.profile.stylePreferences = updateStylePreferences(
+        this.profile.stylePreferences,
+        this.currentMode,
+        correct,
+        responseLatencyMs,
+      );
       await this.storage.saveProfile(this.profile);
     }
 
-    // If failed, re-add to queue
+    // Run regression after every 5th observation if we have 15+
+    const allObs = await this.storage.getAllObservations();
+    if (allObs.length >= 15 && allObs.length % 5 === 0 && this.profile) {
+      const result = runAnalysis(allObs);
+      this.profile.modelStatus = result.status;
+      if (result.recommendations?.bestStyle && this.profile) {
+        this.events.onLog(
+          `Model updated: R²=${result.r_squared?.toFixed(3) ?? 'N/A'}, best style: ${result.recommendations.bestStyle}`,
+        );
+      }
+      await this.storage.saveProfile(this.profile);
+    }
+
     if (!correct) {
       this.dueCards.push(newState);
     }
@@ -278,9 +326,6 @@ export class SessionManager {
     await this.showNextCard();
   }
 
-  /**
-   * End the current session.
-   */
   async endSession(postEffort: 'easy' | 'moderate' | 'hard' | null = null): Promise<void> {
     if (!this.session) return;
 
@@ -288,7 +333,6 @@ export class SessionManager {
     this.session.postSessionEffort = postEffort;
     await this.storage.saveSession(this.session);
 
-    // Update profile stats
     if (this.profile) {
       this.profile.totalSessions++;
       this.profile.totalCards += this.session.cardsReviewed;
@@ -304,7 +348,60 @@ export class SessionManager {
     this.emitState();
   }
 
-  /** Get card text for a given presentation mode */
+  // ── Private helpers ────────────────────────────────────────
+
+  private async recordObservation(
+    correct: boolean,
+    latencyMs: number,
+    rating: ConfidenceRating,
+  ): Promise<void> {
+    if (!this.currentCard || !this.session || !this.profile) return;
+
+    const sessionDurationMin = (Date.now() - this.sessionStartTime) / 60000;
+    const hour = new Date().getHours();
+    let timeOfDay: Observation['features']['timeOfDay'] = 'morning';
+    if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+    else if (hour >= 17 && hour < 21) timeOfDay = 'evening';
+    else if (hour >= 21 || hour < 5) timeOfDay = 'night';
+
+    const obs: Observation = {
+      id: generateId(),
+      timestamp: Date.now(),
+      cardId: this.currentCard.id,
+      sessionId: this.session.id,
+      features: {
+        explanationStyle: this.currentMode,
+        stressLevel: this.zScores?.stressState ?? 0.5,
+        energyLevel: this.zScores ? 1 - this.zScores.cognitiveLoad : 0.5,
+        timeOfDay,
+        topicPosition: this.currentCardIndex,
+        minutesIntoSession: sessionDurationMin,
+        daysSinceLastStudy: this.currentReviewState?.lastReview
+          ? (Date.now() - this.currentReviewState.lastReview) / 86400000
+          : 0,
+        priorLevel: this.currentReviewState?.easeFactor ?? 2.5,
+        complexity: this.currentCard.complexity,
+        course: this.currentCard.deckId,
+      },
+      confounders: this.confounders ?? {
+        onSSRI: false,
+        bmiCategory: 'normal',
+        smoker: false,
+      },
+      outcomes: {
+        masteryGain: rating === 'easy' ? 1 : rating === 'good' ? 0.5 : 0,
+        quickfireCorrect: correct && latencyMs < 5000,
+        elaborated: false,
+        madeOwnConnection: false,
+        neededReexplanation: rating === 'again',
+        recalledCorrectly: correct,
+        latencyMs,
+      },
+    };
+
+    await this.storage.saveObservation(obs);
+  }
+
   private getCardText(card: Card, mode: PresentationMode, isFront: boolean): string {
     if (mode !== 'definition' && card.presentations?.[mode]) {
       return isFront ? card.presentations[mode]!.front : card.presentations[mode]!.back;
@@ -312,11 +409,9 @@ export class SessionManager {
     return isFront ? card.front : card.back;
   }
 
-  /** Find the best performing presentation mode */
   private findBestMode(state: CardReviewState): PresentationMode | null {
     let bestMode: PresentationMode | null = null;
     let bestRate = 0;
-
     for (const [mode, perf] of Object.entries(state.modePerformance)) {
       if (perf && perf.total >= 3) {
         const rate = perf.correct / perf.total;
@@ -329,7 +424,6 @@ export class SessionManager {
     return bestMode;
   }
 
-  /** Get recent accuracy (last 5 cards) */
   private getRecentAccuracy(): number {
     if (this.recentResults.length === 0) return 1;
     return this.recentResults.filter(r => r).length / this.recentResults.length;
