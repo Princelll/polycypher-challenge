@@ -32,15 +32,33 @@ export function setAppActions(actions: {
   startPlannedStudyFn = actions.startPlannedStudy;
 }
 
-// ── Event normalization (from weather/pong pattern) ──────────
+// ── Gesture debouncing (tuned for G2 hardware per even-toolkit) ──
 
-const SCROLL_COOLDOWN_MS = 300;
+const SCROLL_COOLDOWN_MS = 250;  // toolkit-tuned scroll debounce
+const TAP_COOLDOWN_MS = 400;     // prevent double-fire on single taps
+const DOUBLE_TAP_COOLDOWN_MS = 600; // prevent repeated double-tap triggers
 let lastScrollTime = 0;
+let lastTapTime = 0;
+let lastDoubleTapTime = 0;
 
 function scrollThrottled(): boolean {
   const now = Date.now();
   if (now - lastScrollTime < SCROLL_COOLDOWN_MS) return true;
   lastScrollTime = now;
+  return false;
+}
+
+function tapThrottled(): boolean {
+  const now = Date.now();
+  if (now - lastTapTime < TAP_COOLDOWN_MS) return true;
+  lastTapTime = now;
+  return false;
+}
+
+function doubleTapThrottled(): boolean {
+  const now = Date.now();
+  if (now - lastDoubleTapTime < DOUBLE_TAP_COOLDOWN_MS) return true;
+  lastDoubleTapTime = now;
   return false;
 }
 
@@ -104,7 +122,7 @@ export function onEvenHubEvent(event: EvenHubEvent): void {
 
   switch (eventType) {
     case OsEventTypeList.CLICK_EVENT:
-      handleClick();
+      if (!tapThrottled()) handleClick();
       break;
 
     case OsEventTypeList.SCROLL_TOP_EVENT:
@@ -117,7 +135,7 @@ export function onEvenHubEvent(event: EvenHubEvent): void {
 
     case OsEventTypeList.DOUBLE_CLICK_EVENT:
       // Double-click = back to dashboard from any screen
-      void returnToDashboardFn();
+      if (!doubleTapThrottled()) void returnToDashboardFn();
       break;
   }
 }

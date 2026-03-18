@@ -8,6 +8,8 @@ import { state, setBridge, getBridge, buildZScores, RATING_OPTIONS } from './sta
 import { showScreen } from './renderer';
 import { onEvenHubEvent, setAppActions } from './events';
 import { log } from './log';
+import { startKeepAlive } from './keep-alive';
+import { separator } from './display-utils';
 import { Storage } from '../core/storage';
 import { Scheduler } from '../core/scheduler';
 import { SessionManager, SessionEvents } from '../core/session';
@@ -36,6 +38,7 @@ const sessionEvents: SessionEvents = {
     state.summaryText = [
       `Cards: ${session.cardsReviewed}`,
       `Correct: ${session.cardsCorrect} (${pct}%)`,
+      separator(24),
       `Avg time: ${(session.averageLatencyMs / 1000).toFixed(1)}s`,
     ].join('\n');
     state.screen = 'summary';
@@ -217,6 +220,9 @@ export async function initApp(): Promise<void> {
   // Register event handler
   bridge.onEvenHubEvent(onEvenHubEvent);
   log('Event handler registered');
+
+  // Start keep-alive heartbeat to prevent BLE/webview suspension
+  startKeepAlive();
 
   // Load deck list for selection screen and dashboard data
   await refreshDashboard();
