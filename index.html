@@ -1,17 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BioLoop — Biometric-Adaptive Spaced Repetition</title>
-  <link rel="stylesheet" href="/src/ui/styles.css" />
+  <title>BioLoop</title>
+  <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
   <div id="app">
-    <div class="loading">
-      <h1 class="logo">BioLoop</h1>
-      <p>Initializing...</p>
-    </div>
+    <h1>BioLoop</h1>
+    <p id="status">Waiting for glasses...</p>
+    <button id="btn-connect">Connect glasses</button>
+    <div id="event-log" style="margin-top:1em; font-family:monospace; font-size:12px; max-height:300px; overflow:auto;"></div>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

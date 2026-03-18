@@ -1,0 +1,8 @@
+{
+  "name": "BioLoop",
+  "description": "ML-driven biometric-adaptive spaced repetition",
+  "version": "0.1.0",
+  "author": "Jose Eduardo Praiz Mendez",
+  "icon": "",
+  "entry": "index.html"
+}

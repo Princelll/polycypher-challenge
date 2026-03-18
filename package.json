@@ -1,10 +1,11 @@
 {
   "name": "bioloop",
   "version": "0.1.0",
-  "description": "BioLoop: ML-Driven Biometric-Adaptive Spaced Repetition for Frame G2 + R1",
+  "private": true,
+  "description": "BioLoop: ML-driven biometric-adaptive spaced repetition for Even G2 smart glasses",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host --port 5173",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
@@ -12,19 +13,11 @@
     "type": "git",
     "url": "https://github.com/Princelll/polycypher-challenge"
   },
-  "keywords": [
-    "spaced-repetition",
-    "frame",
-    "web-bluetooth",
-    "biometrics",
-    "adaptive-learning"
-  ],
   "author": "Jose Eduardo Praiz Mendez",
   "license": "MIT",
   "dependencies": {
-    "frame-ble": "^0.3.1",
-    "frame-msg": "^1.0.0",
+    "@evenrealities/even_hub_sdk": "latest",
     "typescript": "^5.9.3",
-    "vite": "^8.0.0"
+    "vite": "^7.3.1"
   }
 }

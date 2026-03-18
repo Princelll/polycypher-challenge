@@ -1,15 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/polycypher-challenge/',
-  root: '.',
-  publicDir: 'public',
-  build: {
-    outDir: 'dist',
-    target: 'es2022',
-  },
   server: {
-    port: 3000,
-    open: true,
+    host: true,
+    port: 5173,
   },
 });
