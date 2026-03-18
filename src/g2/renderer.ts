@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Glasses Display Renderer
+// Adaptive Learning G2 — Glasses Display Renderer
 // Renders to Even G2 576×288 display via SDK containers
 // ============================================================
 
@@ -172,7 +172,7 @@ function buildDeckSelect(): PageConfig {
 }
 
 function buildDashboard(): PageConfig {
-  const title = 'BioLoop';
+  const title = 'Adaptive Learning';
   const body = [
     state.deckName || 'No deck loaded',
     separator(24),

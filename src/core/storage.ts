@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop localStorage Storage Layer
+// Adaptive Learning localStorage Storage Layer
 // For Even G2 glasses (no IndexedDB available)
 // ============================================================
 
@@ -15,7 +15,7 @@ import {
   createDefaultReviewState,
 } from './models';
 
-const KEY = 'bioloop_data';
+const KEY = 'adaptive_learning_data';
 
 interface StoredData {
   decks: Deck[];

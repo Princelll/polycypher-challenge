@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Connection Manager
+// Adaptive Learning G2 — Connection Manager
 // Error recovery, reconnection, and state preservation
 // ============================================================
 

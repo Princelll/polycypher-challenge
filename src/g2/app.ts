@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Main App Logic
+// Adaptive Learning G2 — Main App Logic
 // Connects SDK bridge, storage, session manager, and renderer
 // ============================================================
 
@@ -183,7 +183,7 @@ function updateBrowserStatus(): void {
 // ── Initialization ───────────────────────────────────────────
 
 export async function initApp(): Promise<void> {
-  log('Initializing BioLoop...');
+  log('Initializing Adaptive Learning...');
 
   // Open storage and load/create sample decks
   storage = new Storage();

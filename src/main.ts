@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop — Even G2 Smart Glasses App
+// Adaptive Learning — Even G2 Smart Glasses App
 // ML-Driven Biometric-Adaptive Spaced Repetition
 // ============================================================
 
@@ -27,5 +27,5 @@ async function boot(): Promise<void> {
 }
 
 boot().catch((err) => {
-  console.error('BioLoop boot failed:', err);
+  console.error('Adaptive Learning boot failed:', err);
 });

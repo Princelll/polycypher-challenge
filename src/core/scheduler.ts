@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop SM-2+ Spaced Repetition Scheduler
+// Adaptive Learning SM-2+ Spaced Repetition Scheduler
 // with Z-Score Biometric Modifiers (Cheng 2022, Schiweck 2018)
 // ============================================================
 

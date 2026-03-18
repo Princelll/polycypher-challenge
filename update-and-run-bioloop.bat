@@ -1,6 +1,6 @@
 @echo off
 echo ==========================================
-echo   Bioloop Updater & Launcher
+echo   Adaptive Learning Updater & Launcher
 echo ==========================================
 echo.
 
@@ -21,12 +21,12 @@ if errorlevel 1 (
 
 echo.
 echo [2/3] Installing dependencies...
-cd apps\bioloop
+cd apps\adaptive-learning
 call npm install
 cd ..\..
 
 echo.
-echo [3/3] Starting Bioloop...
-call ./start-even.sh bioloop
+echo [3/3] Starting Adaptive Learning...
+call ./start-even.sh adaptive-learning
 
 pause

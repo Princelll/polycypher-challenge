@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Event Handling
+// Adaptive Learning G2 — Event Handling
 // Normalizes SDK events and dispatches to app actions
 // ============================================================
 

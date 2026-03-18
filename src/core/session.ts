@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop Study Session Manager
+// Adaptive Learning Study Session Manager
 // Z-score aware session pipeline with observation recording
 // ============================================================
 

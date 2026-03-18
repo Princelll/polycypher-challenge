@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Keep-Alive Heartbeat
+// Adaptive Learning G2 — Keep-Alive Heartbeat
 // Prevents SDK/webview suspension during idle periods
 // Pattern from even-toolkit keep-alive module
 // ============================================================

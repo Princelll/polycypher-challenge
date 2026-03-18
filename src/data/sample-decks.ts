@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop Sample Decks
+// Adaptive Learning Sample Decks
 // Medical Genetics & Bioinformatics flashcards
 // ============================================================
 

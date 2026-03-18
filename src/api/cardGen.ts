@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop AI Card Generation
+// Adaptive Learning AI Card Generation
 // Calls Anthropic API with 5s timeout, never blocks session
 // ============================================================
 

@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop Data Models
+// Adaptive Learning Data Models
 // ============================================================
 
 /** Card presentation modes - different ways to display the same content */

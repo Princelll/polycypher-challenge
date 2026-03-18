@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Event Logging
+// Adaptive Learning G2 — Event Logging
 // Logs to console and browser panel
 // ============================================================
 
@@ -9,7 +9,7 @@ const logLines: string[] = [];
 export function log(msg: string): void {
   const ts = new Date().toLocaleTimeString();
   const line = `[${ts}] ${msg}`;
-  console.log(`[bioloop] ${msg}`);
+  console.log(`[adaptive-learning] ${msg}`);
   logLines.push(line);
   if (logLines.length > MAX_LOG_LINES) logLines.shift();
 

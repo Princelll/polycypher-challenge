@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Display Utilities
+// Adaptive Learning G2 — Display Utilities
 // Text helpers, scroll indicators, action bars
 // Patterns adapted from even-toolkit (text-utils, action-bar)
 // ============================================================

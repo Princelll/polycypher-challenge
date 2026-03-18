@@ -1,6 +1,6 @@
 {
-  "name": "BioLoop",
-  "description": "ML-driven biometric-adaptive spaced repetition",
+  "name": "Adaptive Learning",
+  "description": "ML-driven biometric-adaptive spaced repetition for Even G2 smart glasses",
   "version": "0.1.0",
   "author": "Jose Eduardo Praiz Mendez",
   "icon": "",

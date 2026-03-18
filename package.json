@@ -1,8 +1,8 @@
 {
-  "name": "bioloop",
+  "name": "adaptive-learning",
   "version": "0.1.0",
   "private": true,
-  "description": "BioLoop: ML-driven biometric-adaptive spaced repetition for Even G2 smart glasses",
+  "description": "Adaptive Learning: ML-driven biometric-adaptive spaced repetition for Even G2 smart glasses",
   "type": "module",
   "scripts": {
     "dev": "vite --host --port 5173",
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Princelll/polycypher-challenge"
+    "url": "https://github.com/Princelll/adaptive-learning"
   },
   "author": "Jose Eduardo Praiz Mendez",
   "license": "MIT",

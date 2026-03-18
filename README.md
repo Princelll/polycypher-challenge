@@ -1,23 +1,38 @@
-# PolyCypher Health — Command-Line Challenge
+# Adaptive Learning
 
-## What this is
-API contact challenge completed as part of my application for the
-**Research Scientist / Bioinformatics Innovator** position at PolyCypher Health.
+ML-driven biometric-adaptive spaced repetition for Even G2 smart glasses.
 
 ## What it does
-A Python script that sends a POST request to PolyCypher's contact API endpoint,
-introducing myself and my background in clinical genomics and variant interpretation.
 
-## Result
-- **Status:** 200 (success)
-- **Response:** `{"message": "Your request has been submitted successfully.", "success": true}`
+An adaptive flashcard study system that runs on Even G2 smart glasses. It uses biometric z-scores (HRV, SpO2, heart rate) and self-reported state to personalize:
 
-## About me
-MD with clinical-genomics training (ACMG variant interpretation, NGS, rare disease)
-transitioning into biomedical informatics. This was my first Python API call —
-learning by doing.
+- **Card scheduling** — SM-2+ algorithm with biometric interval modifiers
+- **Presentation style** — 11 explanation styles (analogy, mnemonic, Socratic, etc.) selected via ridge regression + bandit learning
+- **Session management** — auto-adjusts session length based on cognitive load and stress
 
-## Tech used
-- Python 3.14
-- `requests` library
-- PolyCypher REST API (AWS Lambda)
+## Key features
+
+- Ridge-regularized OLS regression for style preference learning
+- Temporal decay weighting (14-day half-life) for evolving preferences
+- Stress × complexity interaction modeling
+- Adaptive bandit learning rate (0.3/√n) with exploration bonus
+- Connection error recovery with exponential backoff reconnection
+- Z-score biometric modifiers from personal 7-day baseline
+
+## Tech stack
+
+- TypeScript + Vite
+- Even G2 SDK (`@evenrealities/even_hub_sdk`)
+- Pure TypeScript matrix math (zero ML dependencies)
+- localStorage persistence (no IndexedDB on G2)
+
+## Running
+
+```bash
+npm install
+npm run dev
+```
+
+## Author
+
+Jose Eduardo Praiz Mendez

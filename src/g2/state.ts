@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop G2 — Application State
+// Adaptive Learning G2 — Application State
 // ============================================================
 
 import type { EvenAppBridge } from '@evenrealities/even_hub_sdk';

@@ -1,5 +1,5 @@
 // ============================================================
-// BioLoop OLS Regression Engine
+// Adaptive Learning OLS Regression Engine
 // Pure TypeScript, zero external dependencies
 // ============================================================
 
