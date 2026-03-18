@@ -8,6 +8,7 @@ import type { ConfidenceRating, BiometricZScores } from '../core/models';
 /** All screens the glasses can show */
 export type Screen =
   | 'welcome'
+  | 'no_decks'
   | 'deck_select'
   | 'dashboard'
   | 'bio_sleep'

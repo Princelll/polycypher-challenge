@@ -119,6 +119,25 @@ function buildWelcome(): PageConfig {
   };
 }
 
+function buildNoDecks(): PageConfig {
+  const title = 'Welcome to StudyHub';
+  const body = [
+    'No study material found.',
+    '',
+    'Open the app on your phone',
+    'to upload what you want',
+    'to study.',
+  ].join('\n');
+
+  return {
+    textObject: [
+      textContainer(99, 'evt', ' ', 0, 0, 1, 1, true),
+      textContainer(1, 'title', title, 0, 60, 576, 48),
+      textContainer(2, 'body', body, 0, 120, 576, 160),
+    ],
+  };
+}
+
 function buildDeckSelect(): PageConfig {
   const title = 'Pick a Subject';
   const lines = state.deckNames.map(
@@ -247,6 +266,7 @@ function buildSummary(): PageConfig {
 
 const SCREEN_BUILDERS: Record<string, () => PageConfig> = {
   welcome: buildWelcome,
+  no_decks: buildNoDecks,
   deck_select: buildDeckSelect,
   dashboard: buildDashboard,
   bio_sleep: () => buildBioScreen('Sleep quality', BIO_OPTIONS, state.bioSleepIdx),

@@ -99,7 +99,7 @@ async function rateCard(idx: number): Promise<void> {
 
 async function returnToDashboard(): Promise<void> {
   await refreshDashboard();
-  state.screen = 'welcome';
+  state.screen = state.deckNames.length > 0 ? 'welcome' : 'no_decks';
   void showScreen();
 }
 
@@ -125,6 +125,11 @@ async function selectDeck(idx: number): Promise<void> {
 
 async function startPlannedStudy(): Promise<void> {
   await refreshDashboard();
+  if (state.deckNames.length === 0) {
+    state.screen = 'no_decks';
+    void showScreen();
+    return;
+  }
   // Go to bio checkin with the default (first) deck
   state.screen = 'bio_sleep';
   void showScreen();
@@ -219,8 +224,8 @@ export async function initApp(): Promise<void> {
   state.deckNames = allDecks.map(d => d.name);
   state.deckIds = allDecks.map(d => d.id);
 
-  // Start on welcome screen
-  state.screen = 'welcome';
+  // Start on welcome or no_decks screen
+  state.screen = state.deckNames.length > 0 ? 'welcome' : 'no_decks';
   await showScreen();
 
   log('StudyHub ready');
